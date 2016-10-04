@@ -13,6 +13,7 @@ def hello(name=None):
     # set up table if needs be
     query = "CREATE TABLE IF NOT EXISTS cats(name text, coat text, donut text);"
     cur.execute(query)
+    conn.commit()
 
     return render_template('index.html')
 
