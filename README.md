@@ -82,7 +82,7 @@ postgres=# select * from cats;
 ------+--------+------------
  Pika | tortie | strawberry
 
-(3 rows)
+(1 row)
 
 postgres=# 
 ```
