@@ -1,9 +1,5 @@
 version: '2'
 
-volumes:
-  donut-data:
-   driver: local
-
 services:
  db:
   image: postgres
@@ -21,4 +17,8 @@ services:
   depends_on:
     - db
   ports:
-    - "1337:5000"
+    - "2154:5000"
+
+volumes:
+  donut-data:
+   driver: local

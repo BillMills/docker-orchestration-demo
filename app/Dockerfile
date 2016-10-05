@@ -6,7 +6,7 @@ RUN conda update -q conda
 RUN apt-get update
 
 # dependencies
-RUN apt-get -y install gcc libpq-dev postgresql postgresql-client python-dev
+RUN apt-get -y install gcc libpq-dev postgresql
 RUN conda install --yes pip
 RUN pip install flask psycopg2
 
@@ -17,6 +17,7 @@ RUN mkdir /app/templates
 ADD templates/index.html /app/templates/.
 ADD templates/thanks.html /app/templates/.
 
+# use the postgres user for database communications
 USER postgres
 
 # launch the app automatically
