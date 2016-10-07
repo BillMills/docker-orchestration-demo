@@ -25,7 +25,6 @@ Everything Docker needs to know about how to assemble multiple containers into a
  - The `services` key is the most important part of a `docker-compose.yml` file; it lists all the services we want to combine, in our case one called `db` for our database, and one called `app` for our Flask app.
   - `app` contains the following parameters:
     - `build`: build this image from the Dockerfile and assets found in `./app`
-    - `links`: indicates what other containers need to be able to communicate with this container via a [Docker network](https://docs.docker.com/engine/userguide/networking/). Note that the string `db` in this case can be used literally within this container in place of a network address; for example, the line `conn = psycopg2.connect("host='db' dbname='postgres' user='postgres'")` uses this to point Python at a postgres database on the host `db`, as if it were communicating with this database over a conventional network.
     - `depends_on`: indicates what other containers are considered dependencies of this one; in this case, `app` won't be launched until `db` is up and running.
     - `ports` maps network ports from `outside`:`inside` the container. In our case, the Flask app is served on port 5000 inside our container, and here we map that onto port 2154 of our docker host (ie the machine we're running Docker on).
   - `db` contains the following parameters:
@@ -94,6 +93,58 @@ docker-compose down
 ```
 
 Restart everything from the `docker-compose up` command and connect to your `postgres` container again exactly as above, and you should see the same stuff listed in your database; the volume has persisted the database files between app shutdown, cleanup and restart.
+
+### docker swarm
+
+While this application is very simple, a production-scale project may put new db entries into a redis queue first, and have a pool of workers to ferry entries from redis to postgres; we may want to scale up the number of such workers across multiple nodes to handle high volumes of submissions. *docker swarm* provides for the orchestration of multiple nodes in a single app, and we can set up a simple demo swarm on a mac as follows, after installing virtualbox (these instructions lovingly distilled from [this tutorial](https://docs.docker.com/engine/userguide/networking/get-started-overlay/#/create-a-swarm-cluster)):
+
+ - create a machine to serve as a key-value store, and start the kvs running. The kvs contains all the info necessary for service and container discovery across the network:
+
+```
+docker-machine create -d virtualbox mh-keystore
+eval "$(docker-machine env mh-keystore)"
+docker run -d \
+     -p "8500:8500" \
+     -h "consul" \
+     progrium/consul -server -bootstrap
+```
+
+ - create another machine to serve as the swarm master. In this demo, we'll just have the trivial example of one machine in the swarm:
+
+```
+docker-machine create \
+ -d virtualbox \
+ --swarm --swarm-master \
+ --swarm-discovery="consul://$(docker-machine ip mh-keystore):8500" \
+ --engine-opt="cluster-store=consul://$(docker-machine ip mh-keystore):8500" \
+ --engine-opt="cluster-advertise=eth1:2376" \
+ mhs-demo0
+```
+
+ - point your terminal at the swarm master:
+```
+eval $(docker-machine env --swarm mhs-demo0)
+```
+
+ - create a network for all your swarm nodes to communicate on:
+```
+docker network create --driver overlay --subnet=10.0.9.0/24 my-net
+```
+
+ - and finally run your app as before with `docker-compose up`. This time, the swarm machine will download / build all images it needs internally, and launch your app. Check out what IP it's available at with a `docker ps -a`:
+
+```
+Bills-MBP:docker-survey billmills$ docker ps -a
+CONTAINER ID        IMAGE               COMMAND                  CREATED             STATUS              PORTS                                     NAMES
+d8ac4137819b        dockersurvey_app    "/usr/bin/tini -- /bi"   35 seconds ago      Up 34 seconds       192.168.99.101:2154->5000/tcp             mhs-demo0/dockersurvey_app_1
+4eea5c63e43a        postgres            "/docker-entrypoint.s"   35 seconds ago      Up 34 seconds       5432/tcp                                  mhs-demo0/dockersurvey_db_1
+eaf0ff43aecd        swarm:latest        "/swarm join --advert"   3 minutes ago       Up 3 minutes        2375/tcp                                  mhs-demo0/swarm-agent
+b0f47ae2e7da        swarm:latest        "/swarm manage --tlsv"   3 minutes ago       Up 3 minutes        2375/tcp, 192.168.99.101:3376->3376/tcp   mhs-demo0/swarm-agent-master
+```
+
+(if you're doing this in a new terminal shell, remember to do the `eval` step from above to set all the docker environemnt variables to be looking at the swarm master). From the output above, I can see `dockersurvey_app_1` is running on `192.168.99.101:2154`, where I can visit my webpage as usual.
+
+This section demonstrated 'classic' Swarm; in docker 1.12, swarm mode has been introduced, that removes the need for explicitly standing up a kvs and overlay network, but does not currently work with compose; DAB files are an experimental feature that will provide compose-like functionality in swarm mode in the near future.
 
 ### conclusion
 
